@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>범죄 수사판</title>
+    <style>
+        #crime-board {
+            width: 800px;
+            height: 600px;
+            border: 2px solid black;
+            position: relative;
+            background-color: #f0f0f0;
+        }
+        .evidence {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            background-size: cover;
+            cursor: move;
+        }
+        .text-evidence {
+            position: absolute;
+            padding: 10px;
+            background-color: yellow;
+            border: 1px solid black;
+            cursor: move;
+        }
+        .selected {
+            box-shadow: 0 0 10px 5px blue;
+        }
+        #connection-line {
+            position: absolute;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .connection {
+            stroke: red;
+            stroke-width: 2;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <input type="file" id="image-upload" accept="image/*" multiple>
+    <input type="text" id="text-input" placeholder="텍스트 입력">
+    <button id="add-text">텍스트 추가</button>
+    <button id="connect-button">증거 연결</button>
+    <div id="crime-board">
+        <svg id="connection-line" width="100%" height="100%"></svg>
+    </div>
+
+    <script>
+        const crimeBoard = document.getElementById('crime-board');
+        const imageUpload = document.getElementById('image-upload');
+        const textInput = document.getElementById('text-input');
+        const addTextButton = document.getElementById('add-text');
+        const connectButton = document.getElementById('connect-button');
+        const connectionLine = document.getElementById('connection-line');
+
+        let selectedElements = [];
+        let isConnecting = false;
+
+        imageUpload.addEventListener('change', function(e) {
+            const files = e.target.files;
+            for (let file of files) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    addImageEvidence(event.target.result);
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        addTextButton.addEventListener('click', function() {
+            const text = textInput.value.trim();
+            if (text) {
+                addTextEvidence(text);
+                textInput.value = '';
+            }
+        });
+
+        connectButton.addEventListener('click', function() {
+            isConnecting = !isConnecting;
+            connectButton.textContent = isConnecting ? '연결 취소' : '증거 연결';
+            if (!isConnecting) {
+                selectedElements = [];
+                clearSelection();
+            }
+        });
+
+        function addImageEvidence(imageUrl) {
+            const evidence = document.createElement('div');
+            evidence.className = 'evidence';
+            evidence.style.backgroundImage = `url(${imageUrl})`;
+            evidence.style.left = Math.random() * (crimeBoard.offsetWidth - 100) + 'px';
+            evidence.style.top = Math.random() * (crimeBoard.offsetHeight - 100) + 'px';
+
+            crimeBoard.appendChild(evidence);
+            makeDraggable(evidence);
+            makeSelectable(evidence);
+        }
+
+        function addTextEvidence(text) {
+            const evidence = document.createElement('div');
+            evidence.className = 'text-evidence';
+            evidence.textContent = text;
+            evidence.style.left = Math.random() * (crimeBoard.offsetWidth - 100) + 'px';
+            evidence.style.top = Math.random() * (crimeBoard.offsetHeight - 50) + 'px';
+
+            crimeBoard.appendChild(evidence);
+            makeDraggable(evidence);
+            makeSelectable(evidence);
+        }
+
+        function makeDraggable(element) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            element.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                if (isConnecting) return;
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            }
+
+            function elementDrag(e) {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                element.style.top = (element.offsetTop - pos2) + "px";
+                element.style.left = (element.offsetLeft - pos1) + "px";
+                updateConnections();
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+
+        function makeSelectable(element) {
+            element.addEventListener('click', function() {
+                if (!isConnecting) return;
+                
+                if (selectedElements.includes(element)) {
+                    selectedElements = selectedElements.filter(el => el !== element);
+                    element.classList.remove('selected');
+                } else {
+                    selectedElements.push(element);
+                    element.classList.add('selected');
+                }
+
+                if (selectedElements.length === 2) {
+                    connectElements(selectedElements[0], selectedElements[1]);
+                    clearSelection();
+                }
+            });
+        }
+
+        function connectElements(elem1, elem2) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('class', 'connection');
+            updateLine(line, elem1, elem2);
+            connectionLine.appendChild(line);
+            
+            elem1.connections = elem1.connections || [];
+            elem2.connections = elem2.connections || [];
+            elem1.connections.push({element: elem2, line: line});
+            elem2.connections.push({element: elem1, line: line});
+
+            line.addEventListener('click', function() {
+                removeLine(line, elem1, elem2);
+            });
+        }
+
+        function updateLine(line, elem1, elem2) {
+            const rect1 = elem1.getBoundingClientRect();
+            const rect2 = elem2.getBoundingClientRect();
+            const x1 = rect1.left + rect1.width / 2 - crimeBoard.offsetLeft;
+            const y1 = rect1.top + rect1.height / 2 - crimeBoard.offsetTop;
+            const x2 = rect2.left + rect2.width / 2 - crimeBoard.offsetLeft;
+            const y2 = rect2.top + rect2.height / 2 - crimeBoard.offsetTop;
+            
+            line.setAttribute('x1', x1);
+            line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2);
+            line.setAttribute('y2', y2);
+        }
+
+        function updateConnections() {
+            const elements = crimeBoard.querySelectorAll('.evidence, .text-evidence');
+            elements.forEach(elem => {
+                if (elem.connections) {
+                    elem.connections.forEach(conn => {
+                        updateLine(conn.line, elem, conn.element);
+                    });
+                }
+            });
+        }
+
+        function clearSelection() {
+            selectedElements.forEach(elem => elem.classList.remove('selected'));
+            selectedElements = [];
+        }
+
+        function removeLine(line, elem1, elem2) {
+            connectionLine.removeChild(line);
+            elem1.connections = elem1.connections.filter(conn => conn.line !== line);
+            elem2.connections = elem2.connections.filter(conn => conn.line !== line);
+        }
+    </script>
+</body>
+</html>
